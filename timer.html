@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Black Timer</title>
+  <link rel="stylesheet" href="timer.css">
+</head>
+<body>
+  <div class="card" role="region" aria-label="Timer">
+    <div class="title">
+      <h1>⏱️ Black Timer</h1>
+      <span id="status" class="status">idle</span>
+    </div>
+
+    <div id="timeDisplay" class="display" aria-live="polite">00:10</div>
+    <div class="sub">minutes : seconds</div>
+
+    <div class="inputs">
+      <div class="field">
+        <label for="mins">Minutes</label>
+        <input id="mins" type="number" min="0" max="999" value="0" inputmode="numeric" />
+      </div>
+      <div class="field">
+        <label for="secs">Seconds</label>
+        <input id="secs" type="number" min="0" max="59" value="10" inputmode="numeric" />
+      </div>
+    </div>
+
+    <div class="buttons">
+      <button id="startBtn" class="btn-primary">Start</button>
+      <button id="pauseBtn" class="btn-secondary">Pause</button>
+      <button id="resetBtn" class="btn-danger">Reset</button>
+    </div>
+
+    <div class="row">
+      <label class="toggle" title="Play a short beep and vibrate when the countdown finishes">
+        <input type="checkbox" id="alertToggle" checked />
+        Alert at end
+      </label>
+      <span class="note">Tip: press <kbd>Space</kbd> to Start/Pause</span>
+    </div>
+  </div>
+
+  <script>
+    // ===== State =====
+    let remainingMs = 10_000;     // default 10s
+    let endTime = null;           // timestamp when timer should end
+    let rafId = null;             // requestAnimationFrame id
+    let running = false;
+
+    const display = document.getElementById('timeDisplay');
+    const statusEl = document.getElementById('status');
+    const minsEl = document.getElementById('mins');
+    const secsEl = document.getElementById('secs');
+    const alertToggle = document.getElementById('alertToggle');
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    // ===== Utilities =====
+    function clamp(n, min, max){ return Math.min(Math.max(n, min), max); }
+
+    function format(ms){
+      ms = Math.max(0, ms|0);
+      const totalSec = Math.floor(ms / 1000);
+      const m = Math.floor(totalSec / 60);
+      const s = totalSec % 60;
+      return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
+
+    function updateDisplay(ms){
+      display.textContent = format(ms);
+    }
+
+    function setStatus(text){
+      statusEl.textContent = text;
+    }
+
+    function readInputsToMs(){
+      const m = clamp(parseInt(minsEl.value || '0', 10), 0, 999);
+      const s = clamp(parseInt(secsEl.value || '0', 10), 0, 59);
+      minsEl.value = m;
+      secsEl.value = s;
+      return (m * 60 + s) * 1000;
+    }
+
+    // ===== Core Functions =====
+    function setDuration(){
+      // Public: call this if you change inputs programmatically
+      remainingMs = readInputsToMs();
+      endTime = null;
+      running = false;
+      cancelAnimationFrame(rafId);
+      updateDisplay(remainingMs);
+      setStatus('idle');
+    }
+
+    async function beep(){
+      try{
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(880, ctx.currentTime);
+        g.gain.setValueAtTime(0.0001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.15);
+        o.connect(g).connect(ctx.destination);
+        o.start();
+        o.stop(ctx.currentTime + 0.16);
+      }catch(_){}
+    }
+
+    function finish(){
+      running = false;
+      endTime = null;
+      cancelAnimationFrame(rafId);
+      remainingMs = 0;
+      updateDisplay(0);
+      setStatus('done');
+      if (alertToggle.checked){
+        beep();
+        if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+        alert("Time's up!");
+      }
+    }
+
+    function tick(){
+      const now = performance.now();
+      remainingMs = Math.max(0, endTime - now);
+      updateDisplay(remainingMs);
+      if (remainingMs <= 0){
+        finish();
+        return;
+      }
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function startTimer(){
+      if (running) return;
+      // If no schedule yet, set from inputs
+      if (endTime === null){
+        remainingMs = readInputsToMs();
+        if (remainingMs <= 0){
+          setStatus('idle');
+          updateDisplay(0);
+          return;
+        }
+      }
+      endTime = performance.now() + remainingMs;
+      running = true;
+      setStatus('running');
+      rafId = requestAnimationFrame(tick);
+    }
+
+    function pauseTimer(){
+      if (!running) return;
+      running = false;
+      cancelAnimationFrame(rafId);
+      // snap remainingMs
+      remainingMs = Math.max(0, endTime - performance.now());
+      endTime = null;
+      setStatus('paused');
+      updateDisplay(remainingMs);
+    }
+
+    function resetTimer(){
+      cancelAnimationFrame(rafId);
+      running = false;
+      endTime = null;
+      remainingMs = readInputsToMs();
+      updateDisplay(remainingMs);
+      setStatus('idle');
+    }
+
+    // ===== Wire up UI =====
+    startBtn.addEventListener('click', startTimer);
+    pauseBtn.addEventListener('click', pauseTimer);
+    resetBtn.addEventListener('click', resetTimer);
+
+    minsEl.addEventListener('change', setDuration);
+    secsEl.addEventListener('change', setDuration);
+
+    // Spacebar to toggle start/pause
+    window.addEventListener('keydown', (e)=>{
+      if (e.code === 'Space'){
+        e.preventDefault();
+        if (running) pauseTimer(); else startTimer();
+      }
+    });
+
+    // Initialize
+    updateDisplay(remainingMs);
+  </script>
+</body>
+</html>
