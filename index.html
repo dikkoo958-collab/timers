@@ -138,32 +138,35 @@
     }
 
     function startTimer(){
-      if (running) return;
-      // If no schedule yet, set from inputs
-      if (endTime === null){
-        remainingMs = readInputsToMs();
-        if (remainingMs <= 0){
-          setStatus('idle');
-          updateDisplay(0);
-          return;
-        }
-      }
-      endTime = performance.now() + remainingMs;
-      running = true;
-      setStatus('running');
-      rafId = requestAnimationFrame(tick);
-    }
+  if (running) return; // already running, do nothing
 
-    function pauseTimer(){
-      if (!running) return;
-      running = false;
-      cancelAnimationFrame(rafId);
-      // snap remainingMs
-      remainingMs = Math.max(0, endTime - performance.now());
-      endTime = null;
-      setStatus('paused');
-      updateDisplay(remainingMs);
-    }
+  // If no previous countdown exists, read fresh inputs
+  if (endTime === null && remainingMs <= 0){
+    remainingMs = readInputsToMs();
+  }
+
+  if (remainingMs <= 0){
+    setStatus('idle');
+    updateDisplay(0);
+    return;
+  }
+ // schedule the countdown using whatever remainingMs we have
+  endTime = performance.now() + remainingMs;
+  running = true;
+  setStatus('running');
+  rafId = requestAnimationFrame(tick);
+}
+
+  function pauseTimer(){
+  if (!running) return; // nothing to pause
+  running = false;
+  cancelAnimationFrame(rafId);
+  // calculate remaining time before clearing endTime
+  remainingMs = Math.max(0, endTime - performance.now());
+  endTime = null;
+  setStatus('paused');
+  updateDisplay(remainingMs);
+}
 
     function resetTimer(){
       cancelAnimationFrame(rafId);
@@ -195,5 +198,6 @@
   </script>
 </body>
 </html>
+
 
 
